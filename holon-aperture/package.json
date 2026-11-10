@@ -1,0 +1,11 @@
+{
+  "name": "holon-aperture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An artificial-life simulator where every level of organisation climbs the same six rungs and order is read through a scale-resolving aperture.",
+  "scripts": {
+    "test": "node test/check.js",
+    "sim": "node test/run.js",
+    "build": "node tools/build-artifact.js"
+  }
+}

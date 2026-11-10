@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Holon Aperture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <header class="bar">
+    <div class="brand">
+      <svg class="iris" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M16 1.5 21.6 12M30.5 16 20 21.5M16 30.5 10.4 20M1.5 16 12 10.5M26.2 5.8 18.6 10M26.2 26.2 22 18.6M5.8 26.2 13.4 22M5.8 5.8 10 13.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+      <h1>Holon Aperture</h1>
+    </div>
+
+    <div class="transport">
+      <button class="btn icon" id="btnPlay" aria-label="Pause" title="Pause (space)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path id="playGlyph" d="M4 2.5h3v11H4zM9 2.5h3v11H9z" fill="currentColor"/></svg>
+      </button>
+      <button class="btn icon" id="btnStep" aria-label="Advance one tick" title="Advance one tick (.)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5 10 8l-7 5.5zM11 2.5h2.2v11H11z" fill="currentColor"/></svg>
+      </button>
+      <div class="seg" role="group" aria-label="Speed" id="segSpeed">
+        <button data-speed="1" aria-pressed="true">1×</button>
+        <button data-speed="2" aria-pressed="false">2×</button>
+        <button data-speed="4" aria-pressed="false">4×</button>
+        <button data-speed="8" aria-pressed="false">8×</button>
+      </div>
+    </div>
+
+    <dl class="clock">
+      <div><dt>tick</dt><dd id="tick">0</dd></div>
+      <div><dt>rate</dt><dd id="tps">0/s</dd></div>
+      <div><dt>motes</dt><dd id="pop">0</dd></div>
+    </dl>
+
+    <div class="bar-end">
+      <label class="seed" for="seed">Seed
+        <input id="seed" inputmode="numeric" autocomplete="off" spellcheck="false" value="7">
+      </label>
+      <button class="btn" id="btnNew" title="Restart from an empty field with this seed">New world</button>
+      <button class="btn quiet" id="btnTheory">How it works</button>
+    </div>
+  </header>
+
+  <aside class="rail rail-left" aria-label="Dials">
+    <section class="card">
+      <h2>Experiment</h2>
+      <label class="field" for="preset">
+        <span class="field-name">Preset</span>
+        <select id="preset">
+          <option value="genesis">Genesis (defaults)</option>
+          <option value="costly">Costly existence</option>
+          <option value="hot">High entropy</option>
+          <option value="starved">Starved field</option>
+          <option value="steep">Steep consensus cost</option>
+          <option value="ko-ext">Knockout: no externalising</option>
+          <option value="ko-bond">Knockout: no coordination</option>
+          <option value="ko-enc">Knockout: no membranes</option>
+          <option value="flat">Ceiling at Cells</option>
+        </select>
+      </label>
+      <p class="note" id="presetNote">Every mote condenses with a uniformly random genome. Nothing is committed yet.</p>
+    </section>
+
+    <section class="card">
+      <h2>Physics</h2>
+      <div class="dial">
+        <label for="dSun">Energy flux</label><output id="oSun" for="dSun">1.00×</output>
+        <input type="range" id="dSun" min="0.3" max="2" step="0.05" value="1">
+        <p>Free energy entering every cell of the field per tick.</p>
+      </div>
+      <div class="dial">
+        <label for="dPersist">Persistence cost</label><output id="oPersist" for="dPersist">1.00×</output>
+        <input type="range" id="dPersist" min="0.5" max="2" step="0.05" value="1">
+        <p>What every body, bond and membrane pays each tick just to keep existing.</p>
+      </div>
+      <div class="dial">
+        <label for="dEntropy">Entropy</label><output id="oEntropy" for="dEntropy">1.00×</output>
+        <input type="range" id="dEntropy" min="0" max="2.5" step="0.05" value="1">
+        <p>Decay of structure, thermal noise, broken bonds, random death.</p>
+      </div>
+      <div class="dial">
+        <label for="dBeta">Consensus exponent β</label><output id="oBeta" for="dBeta">1.00</output>
+        <input type="range" id="dBeta" min="0.4" max="2" step="0.05" value="1">
+        <p>Flat coordination among n peers costs each one (n−1)<sup>β</sup>. This sets where the scaling crisis arrives.</p>
+      </div>
+      <div class="dial">
+        <label for="dMut">Mutation</label><output id="oMut" for="dMut">1.00×</output>
+        <input type="range" id="dMut" min="0" max="3" step="0.05" value="1">
+      </div>
+      <div class="dial">
+        <label for="dSpont">Spontaneity</label><output id="oSpont" for="dSpont">1.00×</output>
+        <input type="range" id="dSpont" min="0" max="4" step="0.1" value="1">
+        <p>How often a naive mote condenses out of the bare field.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Rungs allowed</h2>
+      <label class="check"><input type="checkbox" id="kExt" checked> <span>Externalise <small>II</small></span></label>
+      <label class="check"><input type="checkbox" id="kBond" checked> <span>Coordinate <small>III</small></span></label>
+      <label class="check"><input type="checkbox" id="kEnc" checked> <span>Transcend <small>V</small></span></label>
+      <label class="field" for="kMax">
+        <span class="field-name">Highest level</span>
+        <select id="kMax">
+          <option value="1">Cell</option><option value="2">Body</option><option value="3">Colony</option><option value="4" selected>Biome</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>Shocks</h2>
+      <div class="row">
+        <button class="btn" id="btnExtinct" title="Kill 70% of all motes at random">Extinction</button>
+        <button class="btn" id="btnStorm" title="Erase structure and break most free bonds">Entropy storm</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Data</h2>
+      <div class="row">
+        <button class="btn" id="btnCSV">Copy time series</button>
+        <button class="btn" id="btnJSON">Copy run record</button>
+      </div>
+      <p class="note">Time series is CSV, one row per sample. The run record is JSON with seed, dials, milestones and spectrum.</p>
+    </section>
+  </aside>
+
+  <main class="center">
+    <section class="stage" id="stage" aria-label="World">
+      <canvas id="view" tabindex="0" aria-label="Simulation view. Scroll to zoom, drag to pan, click to inspect."></canvas>
+
+      <div class="stage-top">
+        <div class="seg on-stage" role="group" aria-label="What to show" id="segView">
+          <button data-view="life" aria-pressed="true">Life</button>
+          <button data-view="energy" aria-pressed="false">Energy</button>
+          <button data-view="structure" aria-pressed="false">Works</button>
+          <button data-view="order" aria-pressed="false">Order</button>
+        </div>
+        <div class="stage-top-end">
+          <label class="mini-select on-stage" for="colorBy"><span>Colour</span>
+            <select id="colorBy">
+              <option value="lineage">Lineage</option>
+              <option value="depth">Nesting depth</option>
+              <option value="energy">Energy</option>
+              <option value="ext">Externalising</option>
+              <option value="coord">Coordination</option>
+            </select>
+          </label>
+          <div class="seg on-stage" role="group" aria-label="Pointer tool" id="segTool">
+            <button data-tool="inspect" aria-pressed="true">Inspect</button>
+            <button data-tool="feed" aria-pressed="false">Feed</button>
+            <button data-tool="burn" aria-pressed="false">Burn</button>
+          </div>
+          <button class="btn on-stage" id="btnFit" title="Fit the whole world (F)">Fit</button>
+        </div>
+      </div>
+
+      <div class="toasts" id="toasts" aria-live="polite"></div>
+      <div class="order-key" id="orderKey" hidden>
+        <span>emptier than chance</span><i></i><span>denser than chance</span>
+      </div>
+      <div class="inspector" id="inspector" hidden></div>
+
+      <div class="stage-bottom">
+        <div class="scale"><i id="scaleBar"></i><span id="scaleLabel">100 u</span></div>
+        <div class="aperture" id="aperture">
+          <div class="aperture-read"><b id="fstop">f/1.4</b><span id="lensLabel">resolving Motes</span></div>
+          <div class="aperture-track">
+            <input type="range" id="lens" min="0" max="4" step="0.01" value="0" aria-label="Aperture: which level of organisation is in focus">
+            <div class="stops" id="stops"></div>
+          </div>
+          <button class="btn on-stage toggle" id="btnAuto" aria-pressed="true" title="Let zoom set the aperture: zoom out to resolve higher order">Auto</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="timeline card" aria-label="History">
+      <div class="timeline-head">
+        <h2>History</h2>
+        <ul class="legend" id="legendDepth"></ul>
+        <div class="legend-div" aria-hidden="true">
+          <span>regular</span><i></i><span>clustered</span>
+        </div>
+      </div>
+      <div class="timeline-plot" id="timelinePlot">
+        <canvas id="timeline"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <aside class="rail rail-right" aria-label="Instruments">
+    <section class="card">
+      <div class="card-head"><h2>The ladder</h2><span class="hint">every level climbs the same six rungs</span></div>
+      <div class="ladder" id="ladder" role="table" aria-label="Stage reached by each level"></div>
+      <ul class="rung-key" id="rungKey"></ul>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Order spectrum</h2><span class="hint">bits per octave of scale, above the noise floor</span></div>
+      <p class="verdict" id="verdict">Indistinguishable from unstructured possibility at every aperture.</p>
+      <div class="chart" id="spectrum"></div>
+    </section>
+
+    <section class="card">
+      <h2>Energetics</h2>
+      <dl class="tiles">
+        <div><dt>Captured</dt><dd id="sIn">0</dd><small>energy / tick</small></div>
+        <div><dt>Persistence cost</dt><dd id="sOut">0</dd><small>dissipated / tick</small></div>
+        <div><dt>Order held</dt><dd id="sBits">0</dd><small>bits of spatial order</small></div>
+        <div><dt>Cost of order</dt><dd id="sEff">0</dd><small>energy per bit per tick</small></div>
+      </dl>
+      <div class="split" id="split" role="img" aria-label="Share of captured energy that comes from bodies versus externalised structure">
+        <div class="split-bar"><i id="splitBody"></i><i id="splitExt"></i></div>
+        <div class="split-labels"><span><b id="splitBodyV">100%</b> harvested by bodies</span><span><b id="splitExtV">0%</b> made by structure</span></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Genome</h2><span class="hint" id="genomeBits">0.00 bits selected per mote</span></div>
+      <div class="meters" id="meters"></div>
+    </section>
+  </aside>
+</div>
+
+<dialog id="theory" aria-labelledby="theoryTitle">
+  <form method="dialog" class="dialog-head">
+    <h2 id="theoryTitle">How it works</h2>
+    <button class="btn quiet" value="close" aria-label="Close">Close</button>
+  </form>
+  <div class="prose">
+    <h3>One rule set, every level</h3>
+    <p>A <em>holon</em> is a whole that is also a part. Motes are the smallest. Cells are made of motes, Bodies of cells, Colonies of bodies, Biomes of colonies. All of them run the same code and climb the same six rungs.</p>
+    <ol class="rungs">
+      <li><b>Embody.</b> A holon harvests free energy with its own body. Motes absorb what is under them. Higher holons collect through their membrane.</li>
+      <li><b>Externalise.</b> It spends energy to deposit <em>works</em> into the world. Works capture extra energy and do part of the harvesting, for whoever stands on them.</li>
+      <li><b>Coordinate.</b> Peers bond through shared works and synchronise their phase. Coordinated builders get more structure per unit of energy and use it more fully.</li>
+      <li><b>Crisis.</b> Flat consensus among n peers costs each of them (n−1)<sup>β</sup>. The benefit saturates. Past a certain size the coalition spends more than a quarter of its income agreeing with itself.</li>
+      <li><b>Transcend.</b> A coalition in crisis either fragments or closes a membrane. The membrane replaces n² channels with one hub, shelters what is inside, and taxes members so nobody can free-ride.</li>
+      <li><b>Recurse.</b> The new holon is a single body again. It starts at rung I, one level up.</li>
+    </ol>
+    <p>None of this is scheduled. Each rung is measured from what the population is doing, and each can be switched off under <em>Rungs allowed</em> to see what stalls.</p>
+
+    <h3>Persistence cost</h3>
+    <p>Nothing exists for free. Per tick a mote pays</p>
+    <p class="eq">c = P·(m₀·s<sup>d</sup> + m<sub>c</sub>·capacity) + m<sub>v</sub>·motility + bonds + k·(n−1)<sup>β</sup> + deposits</p>
+    <p>where d is how many membranes enclose it and s &lt; 1 is the shelter each one gives. A membrane costs its holon c<sub>m</sub>·√mass + c<sub>h</sub>·mass, so upkeep per member falls as the body grows. Works decay at a rate set by <em>Entropy</em>, slower for the works of higher levels. A mote that cannot pay dies and its matter returns to the field.</p>
+
+    <h3>Possibility and its opposite</h3>
+    <p>The run starts as a featureless field. Motes condense at random places with uniformly random genomes. That state is the maximum-entropy one: it carries no information, so it cannot be told apart from any other draw of the same noise.</p>
+    <p>Order is defined as distance from that state. Let p be the share of all motes in each block of a grid and u the uniform share. The relative entropy</p>
+    <p class="eq">D(p‖u) = Σ pᵢ log₂(pᵢ / uᵢ)</p>
+    <p>is the rate at which an observer accumulates evidence that what they see is not noise: after N samples the chance of mistaking it for noise falls as 2<sup>−N·D</sup> (Chernoff–Stein). The statistic G = 2N·D·ln 2 has a known distribution under the Poisson null, so its expected value from sampling alone is subtracted. What remains is the order an observer can actually distinguish, with a z-score. Bars drawn hollow are within 3σ of noise.</p>
+
+    <h3>Why the aperture matters</h3>
+    <p>Relative entropy obeys a chain rule under coarse-graining. Halving the resolution splits it exactly:</p>
+    <p class="eq">D(fine) = D(coarse) + ⟨D(fine | coarse)⟩</p>
+    <p>Repeating this from 10-unit blocks up to 640-unit blocks gives seven terms that add up to the total, one per octave of scale. That is the order spectrum. Stopping the aperture down (zooming out) does not lose the order of the higher levels. It is the only place that order can be seen. Negative bars mean motes are spaced more evenly than chance, which is the signature of territory and packing.</p>
+    <p>The <em>Genome</em> panel applies the same measure to trait space: bits per mote by which selection has moved the population away from the uniform genome it was born with.</p>
+
+    <h3>Things to try</h3>
+    <ul>
+      <li>Watch mote <em>capacity</em> in the Genome panel after the first Cells appear. Once membranes harvest, bodies shed what they no longer need.</li>
+      <li>Raise β and compare where the crisis lands and how large Cells become.</li>
+      <li>Trigger an extinction late in a run and see which levels the order spectrum loses first.</li>
+      <li>Knock out membranes and check whether coordination alone can hold order at large scales.</li>
+    </ul>
+    <p class="fine">Controls: scroll or pinch to zoom, drag to pan, click to inspect. Space pauses, <kbd>.</kbd> steps, <kbd>[</kbd> <kbd>]</kbd> move the aperture, <kbd>F</kbd> fits the world.</p>
+  </div>
+</dialog>
+
+<dialog id="exportDlg" aria-labelledby="exportTitle">
+  <form method="dialog" class="dialog-head">
+    <h2 id="exportTitle">Copy this text</h2>
+    <button class="btn quiet" value="close">Close</button>
+  </form>
+  <p class="note">Your browser blocked the clipboard. The text is selected below.</p>
+  <textarea id="exportText" readonly rows="12" aria-label="Exported data"></textarea>
+</dialog>
+
+<div class="tip" id="tip" hidden></div>
+
+<script src="sim.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

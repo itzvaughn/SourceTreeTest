@@ -141,7 +141,7 @@
       influx: 0, diss: 0, stored: 0, structure: 0,
       traits: { cap: 0, ext: 0, bnd: 0, enc: 0, mov: 0 },
       extShare: 0, bodyShare: 1, coh: new Float64Array(MAXL + 1), bonded: new Float64Array(MAXL + 1),
-      lineages: 0, meanDepth: 0, transcends: 0, collapses: 0
+      lineages: 0, meanDepth: 0, transcends: 0, collapses: 0, genomeBits: 0
     };
     for (var L = 0; L <= MAXL; L++) { st.stage.push(new Float64Array(6)); st.reached.push([false, false, false, false, false, false]); }
     return st;
@@ -870,6 +870,25 @@
     var inv = n0 ? 1 / n0 : 0;
     st.traits.cap = cap * inv; st.traits.ext = ext * inv; st.traits.bnd = bnd * inv; st.traits.enc = enc * inv; st.traits.mov = mov * inv;
     st.stored = stored; st.meanDepth = depthSum * inv; st.lineages = lin;
+    // selection as information: how far the trait distribution has moved from
+    // the uniform genome every mote is born with (bits per mote, 5 traits)
+    var gb = 0;
+    if (n0 > 50) {
+      var hist = this._gh || (this._gh = new Float64Array(5 * 16)), t5, b16;
+      hist.fill(0);
+      for (i = 0; i < n0; i++) {
+        a = motes[i];
+        hist[Math.min(15, (a.cap * 16) | 0)]++; hist[16 + Math.min(15, (a.ext * 16) | 0)]++;
+        hist[32 + Math.min(15, (a.bnd * 16) | 0)]++; hist[48 + Math.min(15, (a.enc * 16) | 0)]++;
+        hist[64 + Math.min(15, (a.mov * 16) | 0)]++;
+      }
+      for (t5 = 0; t5 < 5; t5++) {
+        var hsum = 0;
+        for (b16 = 0; b16 < 16; b16++) { var pv = hist[t5 * 16 + b16] / n0; if (pv > 0) hsum -= pv * Math.log(pv); }
+        gb += (Math.log(16) - hsum) / LN2;
+      }
+    }
+    st.genomeBits = gb;
     var structure = 0;
     for (L = 0; L <= MAXL; L++) { var S = this.S[L], sum = 0; for (i = 0; i < S.length; i++) sum += S[i]; structure += sum * (1 << (2 * L)); }
     st.structure = structure;
@@ -986,7 +1005,7 @@
       bits: Array.prototype.slice.call(sp.bits), z: Array.prototype.slice.call(sp.z),
       order: sp.total, influx: st.influx, diss: st.diss, stored: st.stored, structure: st.structure,
       cap: st.traits.cap, ext: st.traits.ext, bnd: st.traits.bnd, enc: st.traits.enc, mov: st.traits.mov,
-      extShare: st.extShare, top: st.topLevel, depth: st.meanDepth
+      extShare: st.extShare, top: st.topLevel, depth: st.meanDepth, genome: st.genomeBits
     });
     if (h.length > 1400) { // halve resolution, keep the whole run
       var out = [];
@@ -1034,7 +1053,7 @@
 
   World.prototype.exportCSV = function () {
     var cols = ['t', 'motes', 'cells', 'bodies', 'colonies', 'biomes', 'top_level', 'mean_depth',
-      'order_bits', 'influx', 'dissipation', 'stored', 'structure', 'ext_share',
+      'order_bits', 'genome_bits_per_mote', 'influx', 'dissipation', 'stored', 'structure', 'ext_share',
       'cap', 'ext', 'bond', 'enc', 'mov'];
     var s;
     for (s = 0; s < NSCALE; s++) cols.push('bits_' + (CS << s) + 'u');
@@ -1042,7 +1061,7 @@
     var rows = [cols.join(',')];
     for (var i = 0; i < this.history.length; i++) {
       var h = this.history[i];
-      var r = [h.t, h.n[0], h.n[1], h.n[2], h.n[3], h.n[4], h.top, h.depth.toFixed(3), h.order.toFixed(1),
+      var r = [h.t, h.n[0], h.n[1], h.n[2], h.n[3], h.n[4], h.top, h.depth.toFixed(3), h.order.toFixed(1), h.genome.toFixed(3),
         h.influx.toFixed(3), h.diss.toFixed(3), h.stored.toFixed(1), h.structure.toFixed(1), h.extShare.toFixed(3),
         h.cap.toFixed(3), h.ext.toFixed(3), h.bnd.toFixed(3), h.enc.toFixed(3), h.mov.toFixed(3)];
       for (s = 0; s < NSCALE; s++) r.push(h.bits[s].toFixed(1));
