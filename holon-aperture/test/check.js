@@ -62,4 +62,32 @@ const Sim = require('../sim.js');
   assert.strictEqual(w.lv[1].length, 0, 'Cells formed without coordination');
   console.log('ok  knockout: no coordination, no Cells');
 }
+// 6. The origin: from indistinguishable elements to a measured 2-dimensional sheet.
+{
+  const o = new Sim.Origin(7);
+  assert.strictEqual(o.refine().classes, 1, 'elements distinguishable before any differentiation');
+  o.step(); assert.strictEqual(o.refine().classes, 2, 'first differentiation should give exactly two classes');
+  const done = Sim.Origin.run(7), again = Sim.Origin.run(7), st = done.status();
+  assert.strictEqual(done.relations, again.relations); assert.strictEqual(done.x[100], again.x[100]);
+  assert.strictEqual(done.singletons, done.N, 'not every element became distinguishable');
+  assert(done.events > done.depth * 3, 'history is not a proper partial order');
+  for (let i = 0; i < done.N; i++) if (done.state[i] === 2) assert.strictEqual(done.nb[i].length, 6, 'interior element without six relations');
+  for (const seed of [1, 2, 3, 4, 5]) { const d = Sim.Origin.run(seed).dim; assert(d > 1.8 && d < 2.2, 'dimension ' + d + ' for seed ' + seed); }
+  assert(st[6].assumed && st[7].assumed && !st[5].assumed, 'the assumed steps must be flagged as assumed');
+  console.log('ok  origin: ' + done.relations + ' relations, ' + done.events + ' events over ' + done.depth + ' causal steps, dimension ' + done.dim.toFixed(2));
+}
+
+// 7. The chain is intact and every analogue it names has a detector.
+{
+  const chain = require('../chain.js'), w = new Sim.World(7), ana = w.analogues();
+  const steps = chain.reduce((a, e) => a.concat(e.steps), []);
+  assert.strictEqual(chain.length, 13); assert.strictEqual(steps.length, 120);
+  for (let i = 1; i < chain[0].steps.length; i++) assert.strictEqual(chain[0].steps[i].origin, i);
+  for (const s of steps) if (s.analogue) assert(ana[s.analogue], 'no detector for ' + s.analogue);
+  assert.strictEqual(steps.filter(s => s.open).length, 6);
+  for (let i = 0; i < 5000; i++) w.step();
+  const on = Object.entries(w.analogues()).filter(([, v]) => v.on).map(([k]) => k);
+  assert(on.includes('copy') && on.includes('select') && on.includes('assemble') && on.includes('divide'), 'expected analogues missing: ' + on);
+  console.log('ok  chain: 120 steps in 13 epochs, ' + on.length + ' of ' + Object.keys(ana).length + ' analogues observed by t=5000');
+}
 console.log('all checks passed');

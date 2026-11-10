@@ -10,7 +10,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const read = f => fs.readFileSync(path.join(root, f), 'utf8');
 const html = read('index.html');
-const body = html.slice(html.indexOf('<body>') + 6, html.indexOf('<script src="sim.js">'));
+const body = html.slice(html.indexOf('<body>') + 6, html.indexOf('<script src="chain.js">'));
 const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]+>/)[0];
 const out = [
   '<title>Holon Aperture</title>',
@@ -18,6 +18,7 @@ const out = [
   fonts,
   '<style>\n' + read('style.css') + '</style>',
   body.trim(),
+  '<script>\n' + read('chain.js') + '</script>',
   '<script>\n' + read('sim.js') + '</script>',
   '<script>\n' + read('app.js') + '</script>',
   ''

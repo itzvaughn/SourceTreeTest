@@ -46,6 +46,7 @@
         <input id="seed" inputmode="numeric" autocomplete="off" spellcheck="false" value="7">
       </label>
       <button class="btn" id="btnNew" title="Restart from an empty field with this seed">New world</button>
+      <button class="btn quiet" id="btnStack">The stack</button>
       <button class="btn quiet" id="btnTheory">How it works</button>
     </div>
   </header>
@@ -68,6 +69,7 @@
         </select>
       </label>
       <p class="note" id="presetNote">Every mote condenses with a uniformly random genome. Nothing is committed yet.</p>
+      <label class="check"><input type="checkbox" id="kOrigin" checked> <span>Begin each world at the origin</span></label>
     </section>
 
     <section class="card">
@@ -165,6 +167,12 @@
       </div>
 
       <div class="toasts" id="toasts" aria-live="polite"></div>
+      <div class="origin" id="origin" hidden>
+        <ol class="origin-pips" id="originPips" aria-hidden="true"></ol>
+        <p class="origin-step"><span id="oFrom"></span><i aria-hidden="true">→</i><b id="oVia"></b><i aria-hidden="true">→</i><span id="oTo"></span></p>
+        <p class="origin-meas" id="oMeas"></p>
+        <button class="btn on-stage" id="btnSkip">Skip to the world</button>
+      </div>
       <div class="order-key" id="orderKey" hidden>
         <span>emptier than chance</span><i></i><span>denser than chance</span>
       </div>
@@ -200,8 +208,15 @@
   <aside class="rail rail-right" aria-label="Instruments">
     <section class="card">
       <div class="card-head"><h2>The ladder</h2><span class="hint">every level climbs the same six rungs</span></div>
+      <p class="verdict frame" id="frame"></p>
       <div class="ladder" id="ladder" role="table" aria-label="Stage reached by each level"></div>
       <ul class="rung-key" id="rungKey"></ul>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>The stack</h2><span class="hint">from indistinguishability to one human, in 120 steps</span></div>
+      <div class="strip" id="strip" role="group" aria-label="How much of each epoch this world enacts"></div>
+      <p class="note" id="stripNote"></p>
     </section>
 
     <section class="card">
@@ -240,7 +255,7 @@
     <h3>One rule set, every level</h3>
     <p>A <em>holon</em> is a whole that is also a part. Motes are the smallest. Cells are made of motes, Bodies of cells, Colonies of bodies, Biomes of colonies. All of them run the same code and climb the same six rungs.</p>
     <ol class="rungs">
-      <li><b>Embody.</b> A holon harvests free energy with its own body. Motes absorb what is under them. Higher holons collect through their membrane.</li>
+      <li><b>Embody.</b> Whatever level the aperture resolves is the raw capacity: one body that harvests energy as a unit. Everything inside it is finished history. Motes absorb what is under them, higher holons collect through their membrane.</li>
       <li><b>Externalise.</b> It spends energy to deposit <em>works</em> into the world. Works capture extra energy and do part of the harvesting, for whoever stands on them.</li>
       <li><b>Coordinate.</b> Peers bond through shared works and synchronise their phase. Coordinated builders get more structure per unit of energy and use it more fully.</li>
       <li><b>Crisis.</b> Flat consensus among n peers costs each of them (n−1)<sup>β</sup>. The benefit saturates. Past a certain size the coalition spends more than a quarter of its income agreeing with itself.</li>
@@ -248,6 +263,10 @@
       <li><b>Recurse.</b> The new holon is a single body again. It starts at rung I, one level up.</li>
     </ol>
     <p>None of this is scheduled. Each rung is measured from what the population is doing, and each can be switched off under <em>Rungs allowed</em> to see what stalls.</p>
+
+    <h3>Where the world comes from</h3>
+    <p>Each world begins before geometry. 320 elements with no properties and no relations are indistinguishable: any one could be swapped for any other. One is marked off, and nothing explains which. Relations then form under two constraints and two rewrite rules. Composing rule applications gives a history. Which application needed which gives a causal order and a clock. Shortest relation paths give distance, and counting how balls grow gives a dimension, which comes out close to 2.</p>
+    <p>That is as far as the derivation goes. Laying the sheet onto a field and calling it space is an assumption. So is the energy field and its rules. The simulator marks both as assumed, and <em>The stack</em> shows them next to the open questions in the real chain.</p>
 
     <h3>Persistence cost</h3>
     <p>Nothing exists for free. Per tick a mote pays</p>
@@ -277,6 +296,27 @@
   </div>
 </dialog>
 
+<dialog id="stack" class="wide" aria-labelledby="stackTitle">
+  <form method="dialog" class="dialog-head">
+    <div>
+      <h2 id="stackTitle">The stack</h2>
+      <p class="note">Each step reads: what there is → what happens → what results. The result is the raw capacity of the next step.</p>
+    </div>
+    <button class="btn quiet" value="close" aria-label="Close">Close</button>
+  </form>
+  <div class="stack-body">
+    <nav class="stack-nav" id="stackNav" aria-label="Epochs"></nav>
+    <div class="stack-steps" id="stackSteps"></div>
+  </div>
+  <ul class="stack-key">
+    <li class="st-enacted">Enacted in this world</li>
+    <li class="st-assumed">Assumed, not derived</li>
+    <li class="st-analogue">Analogue observed</li>
+    <li class="st-waiting">Not yet observed</li>
+    <li class="st-outside">Outside this model</li>
+  </ul>
+</dialog>
+
 <dialog id="exportDlg" aria-labelledby="exportTitle">
   <form method="dialog" class="dialog-head">
     <h2 id="exportTitle">Copy this text</h2>
@@ -288,6 +328,7 @@
 
 <div class="tip" id="tip" hidden></div>
 
+<script src="chain.js"></script>
 <script src="sim.js"></script>
 <script src="app.js"></script>
 </body>

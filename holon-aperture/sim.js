@@ -72,6 +72,207 @@
     };
   }
 
+
+  /*
+   * Origin: the pre-geometric prologue. It enacts the first six steps of the
+   * chain with nothing but elements and relations, and stops where the chain
+   * itself stops being derivable.
+   *
+   *   N elements with no properties and no relations are indistinguishable:
+   *   every permutation is a symmetry. One is marked (unexplained: it is the
+   *   seed's first random draw). Relations then form under two constraints
+   *   (a relation always closes a triple; an edge belongs to at most two
+   *   triples) by two rewrite rules:
+   *     extend  a related pair on the rim recruits an unrelated element
+   *     close   a rim element with six relations seals its two rim neighbours
+   *   Composing rule applications gives a history; which application needed
+   *   which gives a causal partial order and a clock; shortest relation paths
+   *   give distance, and ball growth gives a dimension.
+   *
+   * Whether an element is distinguishable is decided by colour refinement
+   * (1-WL): two elements differ if their relational neighbourhoods differ at
+   * some depth. That is a lower bound on true distinguishability.
+   */
+  function Origin(seed, n) {
+    var N = this.N = n || 320, i;
+    this.rand = mulberry32(((seed >>> 0) ^ 0x51ED270B) >>> 0);
+    this.nb = []; for (i = 0; i < N; i++) this.nb.push([]);
+    this.x = new Float64Array(N); this.y = new Float64Array(N);
+    this.fx = new Float64Array(N); this.fy = new Float64Array(N);
+    this.state = new Uint8Array(N);            // 0 unrelated, 1 rim, 2 interior
+    this.bn = new Int32Array(N).fill(-1); this.bp = new Int32Array(N).fill(-1);
+    this.last = new Int32Array(N);             // causal depth of the last event touching an element
+    this.marked = -1; this.related = 0; this.relations = 0; this.events = 0; this.depth = 0;
+    this.extends = 0; this.closes = 0; this.blen = 0; this.bstart = 0; this.phase = 0;
+    this.cls = new Int32Array(N); this.single = new Uint8Array(N); this.hue = new Float32Array(N).fill(-1);
+    this.hueN = 0; this.classes = 1; this.singletons = 0;
+    this.sx = 0; this.sy = 0; this.dim = 0; this.ecc = 0;
+    this.cx = 0; this.cy = 0; this.scale = 1;
+    for (i = 0; i < N; i++) { // unrelated elements have no position; this cloud is only for display
+      var a = this.rand() * 6.2832, r = 3 + 9 * Math.sqrt(this.rand());
+      this.x[i] = Math.cos(a) * r; this.y[i] = Math.sin(a) * r;
+    }
+  }
+  Origin.prototype.link = function (a, b) { this.nb[a].push(b); this.nb[b].push(a); this.relations++; };
+  Origin.prototype.event = function (d) { this.events++; if (d > this.depth) this.depth = d; };
+
+  Origin.prototype.step = function () {
+    var r = this.rand, a, b, c, d, i;
+    if (this.phase === 0) { this.marked = 0; this.phase = 1; this.event(0); return { type: 'differentiate', a: 0 }; }
+    if (this.phase === 1) {
+      for (i = 0; i < 3; i++) { this.x[i] = Math.cos(i * 2.0944) * 0.58; this.y[i] = Math.sin(i * 2.0944) * 0.58; this.state[i] = 1; this.last[i] = 1; this.sx += this.x[i]; this.sy += this.y[i]; }
+      this.link(0, 1); this.link(1, 2); this.link(2, 0);
+      this.bn[0] = 1; this.bn[1] = 2; this.bn[2] = 0; this.bp[0] = 2; this.bp[1] = 0; this.bp[2] = 1;
+      this.related = 3; this.blen = 3; this.bstart = 0; this.phase = 2; this.event(1);
+      return { type: 'relate', a: 0, b: 1, c: 2 };
+    }
+    if (this.phase !== 2) return null;
+    if (this.related >= this.N) { this.phase = 3; return null; }
+    // pick a rim pair, preferring crowded ones so notches fill before they become fjords
+    var best = -1, bs = -1;
+    for (var t = 0; t < 4; t++) {
+      var k = (r() * this.blen) | 0, u = this.bstart;
+      while (k-- > 0) u = this.bn[u];
+      var sc = this.nb[u].length + this.nb[this.bn[u]].length + r() * 0.5;
+      if (sc > bs) { bs = sc; best = u; }
+    }
+    a = best; b = this.bn[a]; c = this.related++;
+    var mx = (this.x[a] + this.x[b]) / 2, my = (this.y[a] + this.y[b]) / 2;
+    var ox = mx - this.sx / (this.related - 1), oy = my - this.sy / (this.related - 1), ol = Math.sqrt(ox * ox + oy * oy);
+    if (ol < 1e-3) { ox = this.y[b] - this.y[a]; oy = this.x[a] - this.x[b]; ol = Math.sqrt(ox * ox + oy * oy) + 1e-9; }
+    this.x[c] = mx + ox / ol * 0.8 + (r() - 0.5) * 0.1; this.y[c] = my + oy / ol * 0.8 + (r() - 0.5) * 0.1;
+    this.sx += this.x[c]; this.sy += this.y[c];
+    this.link(a, c); this.link(b, c);
+    this.bn[a] = c; this.bp[c] = a; this.bn[c] = b; this.bp[b] = c; this.state[c] = 1; this.blen++;
+    d = 1 + Math.max(this.last[a], this.last[b]); this.last[a] = this.last[b] = this.last[c] = d;
+    this.extends++; this.event(d);
+    var queue = [a, b, c], closed = 0;
+    while (queue.length) {
+      var v = queue.pop();
+      if (this.state[v] !== 1 || this.nb[v].length < 6 || this.blen <= 3) continue;
+      var p = this.bp[v], q = this.bn[v];
+      if (this.nb[p].indexOf(q) >= 0) continue;
+      this.link(p, q); this.bn[p] = q; this.bp[q] = p; this.state[v] = 2; this.blen--;
+      if (this.bstart === v) this.bstart = p;
+      d = 1 + Math.max(this.last[p], this.last[v], this.last[q]); this.last[p] = this.last[v] = this.last[q] = d;
+      this.closes++; closed++; this.event(d);
+      queue.push(p, q);
+    }
+    this.relax(1);
+    return { type: 'extend', a: a, b: b, c: c, closed: closed };
+  };
+
+  // positions follow from relations alone: unit springs on relations, short-range repulsion
+  Origin.prototype.relax = function (iters) {
+    var n = this.related, x = this.x, y = this.y, fx = this.fx, fy = this.fy, i, j, k, dx, dy, d, f;
+    for (var it = 0; it < iters; it++) {
+      for (i = 0; i < n; i++) { fx[i] = 0; fy[i] = 0; }
+      for (i = 0; i < n; i++) {
+        var nb = this.nb[i];
+        for (k = 0; k < nb.length; k++) {
+          j = nb[k]; if (j < i) continue;
+          dx = x[j] - x[i]; dy = y[j] - y[i]; d = Math.sqrt(dx * dx + dy * dy) + 1e-9;
+          f = 0.14 * (d - 1) / d; fx[i] += dx * f; fy[i] += dy * f; fx[j] -= dx * f; fy[j] -= dy * f;
+        }
+        for (j = i + 1; j < n; j++) {
+          dx = x[j] - x[i]; if (dx > 1.5 || dx < -1.5) continue;
+          dy = y[j] - y[i]; if (dy > 1.5 || dy < -1.5) continue;
+          var d2 = dx * dx + dy * dy; if (d2 > 2.25) continue;
+          d = Math.sqrt(d2) + 1e-9; f = 0.07 * (1.5 - d) / d;
+          fx[i] -= dx * f; fy[i] -= dy * f; fx[j] += dx * f; fy[j] += dy * f;
+        }
+      }
+      for (i = 0; i < n; i++) {
+        var mx = fx[i], my = fy[i]; if (mx > 0.4) mx = 0.4; else if (mx < -0.4) mx = -0.4; if (my > 0.4) my = 0.4; else if (my < -0.4) my = -0.4;
+        x[i] += mx; y[i] += my;
+      }
+    }
+  };
+
+  // colour refinement: which elements can be told apart by their relations
+  Origin.prototype.refine = function () {
+    var N = this.N, n = this.related, cls = this.cls, i, k, round;
+    if (this.phase === 0) { this.classes = 1; this.singletons = 0; return this; }
+    for (i = 0; i < N; i++) cls[i] = i < n ? (i === this.marked ? 1 : 0) : 2;
+    if (n === 0) { this.classes = 2; this.singletons = 1; this.single[0] = 1; if (this.hue[0] < 0) this.hue[0] = (this.hueN++ * 0.61803) % 1; return this; }
+    var count = 0, next = new Int32Array(n);
+    for (round = 0; round < 60; round++) {
+      var map = new Map(), id = 0;
+      for (i = 0; i < n; i++) {
+        var nb = this.nb[i], cs = [];
+        for (k = 0; k < nb.length; k++) cs.push(cls[nb[k]]);
+        cs.sort(function (p, q) { return p - q; });
+        var key = cls[i] + ':' + cs.join(',');
+        var v = map.get(key); if (v === undefined) { v = id++; map.set(key, v); }
+        next[i] = v;
+      }
+      for (i = 0; i < n; i++) cls[i] = next[i];
+      if (id === count) break;
+      count = id;
+    }
+    var size = new Int32Array(count + 1), s = 0;
+    for (i = 0; i < n; i++) size[cls[i]]++;
+    for (i = 0; i < n; i++) {
+      var one = size[cls[i]] === 1; this.single[i] = one ? 1 : 0;
+      if (one) { s++; if (this.hue[i] < 0) this.hue[i] = (this.hueN++ * 0.61803) % 1; }
+    }
+    this.singletons = s; this.classes = count + (n < N ? 1 : 0);
+    return this;
+  };
+
+  // distance from shortest relation paths; dimension from how balls grow
+  Origin.prototype.measure = function () {
+    var n = this.related, dist = new Int32Array(n), vol = [], src, i, k, r;
+    if (n < 30) { this.dim = 0; this.ecc = 0; return this; }
+    var eccMin = 1e9;
+    for (src = 0; src < 3; src++) {
+      dist.fill(-1); dist[src] = 0;
+      var q = [src], h = 0, ecc = 0;
+      while (h < q.length) { var u = q[h++], nb = this.nb[u]; for (k = 0; k < nb.length; k++) { var w = nb[k]; if (dist[w] < 0) { dist[w] = dist[u] + 1; if (dist[w] > ecc) ecc = dist[w]; q.push(w); } } }
+      if (ecc < eccMin) eccMin = ecc;
+      for (i = 0; i < n; i++) if (dist[i] >= 0) vol[dist[i]] = (vol[dist[i]] || 0) + 1 / 3;
+    }
+    this.ecc = eccMin;
+    var rmax = Math.floor(eccMin * 0.7), sx = 0, sy = 0, sxx = 0, sxy = 0, m = 0, cum = vol[0] || 1;
+    for (r = 1; r <= rmax; r++) {
+      cum += vol[r] || 0;
+      if (r < 2) continue;
+      var lx = Math.log(r + 0.5), ly = Math.log(cum);
+      sx += lx; sy += ly; sxx += lx * lx; sxy += lx * ly; m++;
+    }
+    this.dim = m >= 3 ? (m * sxy - sx * sy) / (m * sxx - sx * sx) : 0;
+    return this;
+  };
+
+  Origin.prototype.finish = function () {
+    this.relax(80);
+    var n = this.related, cx = 0, cy = 0, rad = 0, i;
+    for (i = 0; i < n; i++) { cx += this.x[i]; cy += this.y[i]; }
+    cx /= n; cy /= n;
+    for (i = 0; i < n; i++) { var dx = this.x[i] - cx, dy = this.y[i] - cy, d = Math.sqrt(dx * dx + dy * dy); if (d > rad) rad = d; }
+    this.cx = cx; this.cy = cy; this.scale = H * 0.46 / (rad + 0.5);
+    this.refine(); this.measure();
+    return this;
+  };
+  Origin.prototype.wx = function (i) { return W / 2 + (this.x[i] - this.cx) * this.scale; };
+  Origin.prototype.wy = function (i) { return H / 2 + (this.y[i] - this.cy) * this.scale; };
+
+  // one entry per step of the chain's first epoch: has this run done it, and what was measured
+  Origin.prototype.status = function () {
+    var o = this, w = o.depth ? o.events / o.depth : 0;
+    return [
+      { done: o.phase >= 1, text: o.phase < 1 ? o.N + ' elements, no properties, no relations. Any one could be swapped for any other.' : o.related < 3 ? 'One element is marked off. Nothing explains which: it is the first random draw of the seed.' : o.singletons + ' of ' + o.N + ' elements can now be told apart by their relations alone.' },
+      { done: o.relations >= 3, text: o.relations + ' relations under two constraints: every relation closes a triple, and a pair is shared by at most two triples. ' + o.blen + ' places the structure can grow from.' },
+      { done: o.extends > 0 && o.closes > 0, text: 'Two rewrite rules. Extend: a related pair recruits an unrelated element (' + o.extends + ' times). Close: an element with six relations seals its neighbours (' + o.closes + ' times).' },
+      { done: o.events >= 12, text: o.events + ' rule applications composed into one history.' },
+      { done: o.depth >= 6 && o.events > o.depth, text: 'Which application needed which gives a partial order: ' + o.events + ' events, ' + o.depth + ' causal steps deep, so about ' + w.toFixed(1) + ' share each instant.' },
+      { done: o.dim > 0, text: o.dim > 0 ? 'Shortest relation paths give distance. Balls grow as r^' + o.dim.toFixed(2) + ' across a radius of ' + o.ecc + ' steps: a candidate ' + Math.round(o.dim) + '-dimensional geometry.' : 'Not enough related elements yet to measure how balls grow.' },
+      { done: o.phase >= 3, assumed: true, text: 'Assumed, not derived. The sheet is laid onto a ' + GW + ' × ' + GH + ' field and called space. The clock of that world is its own tick, not this causal order.' },
+      { done: o.phase >= 3, assumed: true, text: 'Assumed, not derived. An energy field with fixed rules (inflow, diffusion, harvest, decay) is put in by hand. No quantum theory is simulated.' }
+    ];
+  };
+  Origin.run = function (seed, n) { var o = new Origin(seed, n); o.step(); o.step(); while (o.step()) { /* grow */ } return o.finish(); };
+
   function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
   function hueDist(a, b) { var d = Math.abs(a - b); return d > 0.5 ? 1 - d : d; }
 
@@ -100,8 +301,18 @@
     this.inflow = new Float32Array(GW * GH);
     this.weather = new Float32Array(GW * GH).fill(1);
     this.S = [];
-    for (var L = 0; L <= MAXL; L++) this.S.push(new Float32Array((GW >> L) * (GH >> L)));
-    for (var i = 0; i < GW * GH; i++) this.F[i] = 0.16 + 0.06 * this.rand();
+    var L;
+    for (L = 0; L <= MAXL; L++) this.S.push(new Float32Array((GW >> L) * (GH >> L)));
+    // the field starts where the relational sheet was laid down
+    var o = this.origin = Origin.run(this.seed), i, sig = o.scale / CS * 0.8, rad = Math.ceil(sig * 2.2), fmax = 0;
+    for (var k = 0; k < o.related; k++) {
+      var ox = o.wx(k) / CS, oy = o.wy(k) / CS, x0 = Math.max(0, Math.floor(ox - rad)), x1 = Math.min(GW - 1, Math.ceil(ox + rad));
+      for (var gy = Math.max(0, Math.floor(oy - rad)); gy <= Math.min(GH - 1, Math.ceil(oy + rad)); gy++)
+        for (var gx = x0; gx <= x1; gx++) { var ddx = gx + 0.5 - ox, ddy = gy + 0.5 - oy; this.F[gx + gy * GW] += Math.exp(-(ddx * ddx + ddy * ddy) / (2 * sig * sig)); }
+    }
+    for (i = 0; i < GW * GH; i++) if (this.F[i] > fmax) fmax = this.F[i];
+    for (i = 0; i < GW * GH; i++) this.F[i] = 0.05 + 0.30 * this.F[i] / fmax + 0.03 * this.rand();
+    this.tot = { nucleated: 0, influx: 0, rim: 0, fission: new Float64Array(MAXL + 1), transcend: new Float64Array(MAXL + 1), collapse: new Float64Array(MAXL + 1) };
     this.lv = [];
     for (L = 0; L <= MAXL; L++) this.lv.push([]);
     this.hashHead = new Int32Array(HW * HH);
@@ -141,7 +352,8 @@
       influx: 0, diss: 0, stored: 0, structure: 0,
       traits: { cap: 0, ext: 0, bnd: 0, enc: 0, mov: 0 },
       extShare: 0, bodyShare: 1, coh: new Float64Array(MAXL + 1), bonded: new Float64Array(MAXL + 1),
-      lineages: 0, meanDepth: 0, transcends: 0, collapses: 0, genomeBits: 0
+      lineages: 0, meanDepth: 0, transcends: 0, collapses: 0, genomeBits: 0,
+      maxGen: new Float64Array(MAXL + 1), meanAge: new Float64Array(MAXL + 1), rimShare: 0, memberAge: 0
     };
     for (var L = 0; L <= MAXL; L++) { st.stage.push(new Float64Array(6)); st.reached.push([false, false, false, false, false, false]); }
     return st;
@@ -263,15 +475,16 @@
   World.prototype.nucleate = function () {
     // Spontaneous symmetry breaking: a fluctuation of the free-energy field
     // condenses into a body with a maximally uncommitted genome.
-    var rate = (this.t < 400 ? 0.8 : 0.15) * this.p.spont;
+    var rate = (this.t < 400 ? 1.6 : 0.15) * this.p.spont;
     var n = Math.floor(rate) + (this.rand() < rate - Math.floor(rate) ? 1 : 0);
     for (var i = 0; i < n; i++) {
       if (this.lv[0].length >= K.maxMotes) return;
       var gx = (this.rand() * GW) | 0, gy = (this.rand() * GH) | 0, ci = gx + gy * GW;
       var f = this.F[ci];
-      if (this.t > 400 && this.rand() > f * f) continue;
+      if (this.rand() > (this.t > 400 ? f * f : f * 3)) continue;
       this.F[ci] = Math.max(0, f - 0.2);
       var m = this.spawnMote((gx + this.rand()) * CS, (gy + this.rand()) * CS, K.Ebirth);
+      this.tot.nucleated++;
       if (this.lv[0].length === 1) this.milestone('life', 0, 0, 'First mote condenses out of the field');
       if (m && this.t < 3) m.th = 0;
     }
@@ -525,7 +738,7 @@
                     var mx = ((a.x + b.x) * 0.5 / cs2) | 0, my = ((a.y + b.y) * 0.5 / cs2) | 0;
                     if (mx >= gw) mx = gw - 1; if (my >= gh) my = gh - 1;
                     var hd2 = hueDist(a.hue, b.hue) / 0.16;
-                    pb = 0.05 * slow * a.bnd * b.bnd * Math.exp(-hd2 * hd2) * (0.04 + 0.96 * hillf(SL[mx + my * gw]));
+                    pb = 0.09 * slow * a.bnd * b.bnd * Math.exp(-hd2 * hd2) * (0.04 + 0.96 * hillf(SL[mx + my * gw]));
                   } else pb = 0;
                   if (pb > 0 && rand() < pb && !bonded(a, b)) bond(a, b);
                 }
@@ -767,7 +980,7 @@
     for (var L = 0; L <= this.top && L <= MAXL; L++) {
       var arr = this.lv[L], out = this.coals[L];
       out.length = 0;
-      var nmin = L === 0 ? 6 : L === 1 ? 5 : L === 2 ? 4 : 3;
+      var nmin = L === 0 ? 6 : L === 1 ? 4 : L === 2 ? 4 : 3;
       var todo = [];
       for (var i = 0; i < arr.length; i++) {
         var s = arr[i];
@@ -933,7 +1146,45 @@
         if (rc[5]) this.milestone('s5l' + L, L, 5, 'The ladder recurses: ' + LEVEL_PLURAL[L + 1] + ' begin the climb again');
       } else { sg[5] = 0; rc[5] = false; }
     }
+    var tot = this.tot, rim = 0, memAge = 0, memN = 0;
+    for (L = 0; L <= MAXL; L++) {
+      tot.fission[L] += acc.fission[L]; tot.transcend[L] += acc.transcend[L]; tot.collapse[L] += acc.collapse[L]; rim += acc.rim[L];
+      arr = lv[L]; var ag = 0, mg = 0;
+      for (i = 0; i < arr.length; i++) { a = arr[i]; ag += a.age; if (a.gen > mg) mg = a.gen; if (L === 0 && a.parent) { memAge += a.age; memN++; } }
+      st.meanAge[L] = arr.length ? ag / arr.length : 0; st.maxGen[L] = mg;
+    }
+    tot.rim += rim; tot.influx += acc.influx;
+    st.rimShare = acc.influx > 0 ? rim / acc.influx : 0;
+    st.memberAge = memN ? memAge / memN : 0;
     this.acc = this._newAcc();
+  };
+
+  /*
+   * Steps of the wider chain that this world shows a working analogue of.
+   * Each is a measurement, not a claim that the real transition happened this way.
+   */
+  World.prototype.analogues = function () {
+    var st = this.stats, tot = this.tot, N = this.lv[0].length || 1, inside = Math.max(0, this.lv[0].length - st.massTop[0]);
+    function pct(v) { return Math.round(v * 100) + '%'; }
+    function n(v) { return Math.round(v).toLocaleString('en-US'); }
+    var cellsIn = st.n[1] ? st.stage[1][4] : 0, ratio = st.memberAge > 0 ? st.meanAge[1] / st.memberAge : 0;
+    return {
+      flow: { on: st.influx > 0, text: 'Energy enters every cell of the field each tick; ' + st.influx.toFixed(1) + ' units are captured per tick.' },
+      assemble: { on: tot.transcend[0] > 0, text: n(tot.transcend[0]) + ' membranes have closed around coalitions of motes.' },
+      accel: { on: st.extShare > 0.2, text: pct(st.extShare) + ' of captured energy exists only because of works the population built.' },
+      copy: { on: this.births > 0, text: n(this.births) + ' motes born as mutated copies of a parent.' },
+      select: { on: st.genomeBits > 0.15, text: 'Differential reproduction has moved the gene pool ' + st.genomeBits.toFixed(2) + ' bits per mote away from the uniform genome.' },
+      retain: { on: inside > 0, text: pct(inside / N) + ' of motes live and cooperate inside a membrane.' },
+      uptake: { on: st.rimShare > 0.01, text: 'Membranes collect ' + pct(st.rimShare) + ' of all captured energy from their surroundings.' },
+      divide: { on: tot.fission[1] > 0, text: n(tot.fission[1]) + ' Cells have divided, splitting their motes between two descendants.' },
+      groupsel: { on: st.maxGen[1] >= 3, text: 'Cell lineages are up to ' + st.maxGen[1] + ' divisions deep, each division copying the Cell\u2019s own genome with mutation.' },
+      repair: { on: ratio > 1.5 && st.n[1] > 0, text: 'Cells are on average ' + ratio.toFixed(1) + '× older than the motes inside them: the whole outlives its parts.' },
+      descent: { on: st.maxGen[0] >= 5, text: 'The deepest mote lineage is ' + st.maxGen[0] + ' generations long.' },
+      adhere: { on: st.n[1] > 0 && st.bonded[1] > 0.05, text: pct(st.bonded[1]) + ' of Cells are bonded to other Cells, many because daughters stayed attached after division.' },
+      signal: { on: st.n[1] > 0 && st.bonded[1] * st.coh[1] > 0.15, text: 'Bonded Cells share energy and hold a phase coherence of ' + st.coh[1].toFixed(2) + '.' },
+      collsel: { on: tot.fission[2] > 0, text: n(tot.fission[2]) + ' Bodies have reproduced as wholes.' },
+      individ: { on: st.n[2] > 0, text: n(st.n[2]) + ' Bodies tax their Cells so none can free-ride; ' + pct(cellsIn) + ' of Cells live inside one.' }
+    };
   };
 
   // Expected value and variance of k*ln(k/lam) under Poisson(lam).
@@ -1074,6 +1325,7 @@
   World.prototype.exportJSON = function () {
     return JSON.stringify({
       simulator: 'Holon Aperture', seed: this.seed, tick: this.t, params: this.p,
+      origin: { elements: this.origin.N, relations: this.origin.relations, events: this.origin.events, causal_depth: this.origin.depth, distinguishable: this.origin.singletons, dimension: +this.origin.dim.toFixed(3), radius: this.origin.ecc, assumed: ['correspondence between the relational sheet and the field', 'the energy field and its rules'] },
       milestones: this.milestones, stages: this.stats.stage.map(function (a) { return Array.prototype.slice.call(a); }),
       spectrum: { scale_units: [10, 20, 40, 80, 160, 320, 640], bits: Array.prototype.slice.call(this.spec.bits), z: Array.prototype.slice.call(this.spec.z) },
       history: this.history
@@ -1081,7 +1333,7 @@
   };
 
   return {
-    World: World, defaultParams: defaultParams, mulberry32: mulberry32,
+    World: World, Origin: Origin, defaultParams: defaultParams, mulberry32: mulberry32,
     GW: GW, GH: GH, CS: CS, W: W, H: H, MAXL: MAXL, NSCALE: NSCALE, R0: R0,
     LEVEL_NAMES: LEVEL_NAMES, LEVEL_PLURAL: LEVEL_PLURAL, STAGE_NAMES: STAGE_NAMES, K: K
   };

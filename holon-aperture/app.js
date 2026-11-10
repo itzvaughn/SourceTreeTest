@@ -9,6 +9,7 @@
   // brighter tints of the five level hues, for the dark viewport only
   var STAGE_LV = [[106, 165, 245], [53, 201, 152], [240, 178, 58], [238, 122, 163], [171, 157, 245]];
   var DEPTH_LABEL = ['free motes', 'in Cells', 'in Bodies', 'in Colonies', 'in Biomes'];
+  var CHAIN = window.HolonChain || [];
   var TRAITS = [['cap', 'Capacity'], ['ext', 'Externalising'], ['bnd', 'Bonding'], ['enc', 'Enclosure'], ['mov', 'Motility']];
 
   function $(id) { return document.getElementById(id); }
@@ -57,7 +58,9 @@
       sprites.push(makeSprite(Math.round(40 + 190 * t), Math.round(70 + 170 * t), Math.round(130 + 125 * t)));
     }
     for (i = 0; i <= MAXL; i++) sprites.push(makeSprite(STAGE_LV[i][0], STAGE_LV[i][1], STAGE_LV[i][2]));
+    sprites.push(makeSprite(176, 184, 210)); // an element nothing yet tells apart
   })();
+  var GREY = sprites.length - 1;
 
   // ---- world ---------------------------------------------------------------
   function readParams() {
@@ -75,7 +78,101 @@
     $('toasts').textContent = '';
     showInspector();
     histDirty = true;
+    if ($('kOrigin').checked && !reduceMotion) startOrigin(performance.now());
+    else { endOrigin(); for (var i = 0; i < 420; i++) world.step(); world.events.length = 0; }
   }
+
+  // ---- origin: the world before geometry ------------------------------------
+  var og = null;
+  function ease(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+  function startOrigin(now) {
+    var o = new Sim.Origin(world.seed), i;
+    og = { o: o, phase: 'cloud', tp: now, cap: 0, capT: now, acc: 0, last: now, fr: 0, mix: 0, vr: 13, flash: 0, topY: 60, botY: 300, dx: new Float64Array(o.N), dy: new Float64Array(o.N) };
+    for (i = 0; i < o.N; i++) { og.dx[i] = o.x[i]; og.dy[i] = o.y[i]; }
+    var pips = '';
+    for (i = 0; i < 8; i++) pips += '<li></li>';
+    $('originPips').innerHTML = pips;
+    $('origin').hidden = false;
+    setCaption();
+  }
+  function endOrigin() { og = null; $('origin').hidden = true; }
+  function setCaption() {
+    if (!og || !CHAIN.length) return;
+    var st = og.o.status(), step = CHAIN[0].steps[og.cap], pips = $('originPips').children;
+    $('oFrom').textContent = step.from; $('oVia').textContent = step.via; $('oTo').textContent = step.to;
+    $('oMeas').textContent = st[og.cap].text;
+    // keep the drawing clear of the controls above and the caption below
+    og.topY = document.querySelector('.stage-top').offsetHeight + 22; og.botY = $('origin').offsetTop - 14;
+    for (var i = 0; i < pips.length; i++) pips[i].className = (i < og.cap || (st[i].done && i <= og.cap) ? 'is-done' : i === og.cap ? 'is-now' : '') + (st[i].assumed ? ' is-assumed' : '');
+  }
+  function tickOrigin(now) {
+    var o = og.o, dt = Math.min(0.1, (now - og.last) / 1000), el = now - og.tp;
+    og.last = now; og.fr++;
+    if (og.phase === 'cloud') { if (el > 1500) { o.step(); o.refine(); og.phase = 'mark'; og.tp = now; og.flash = now; setCaption(); } }
+    else if (og.phase === 'mark') { if (el > 1500) { o.step(); o.refine(); og.phase = 'grow'; og.tp = now; og.cap = 1; og.capT = now; setCaption(); } }
+    else if (og.phase === 'grow') {
+      var st = o.status();
+      if (og.cap < 5 && st[og.cap].done && now - og.capT > 1400) { og.cap++; og.capT = now; }
+      og.acc += dt * (og.cap <= 2 ? 4 : og.cap === 3 ? 9 : og.cap === 4 ? 20 : 50 + 220 * o.related / o.N);
+      while (og.acc >= 1 && og.phase === 'grow') {
+        og.acc -= 1;
+        var ev = o.step();
+        if (!ev) { o.finish(); og.phase = 'lay'; og.tp = now; og.cap = 6; }
+        else if (ev.type === 'extend') { og.dx[ev.c] = (og.dx[ev.a] + og.dx[ev.b]) / 2; og.dy[ev.c] = (og.dy[ev.a] + og.dy[ev.b]) / 2; }
+      }
+      if (og.phase === 'grow') { if (og.fr % 5 === 0) o.refine(); if (og.fr % 15 === 0) o.measure(); }
+    }
+    else if (og.phase === 'lay') { og.mix = ease(el / 2200); if (el > 2900) { og.phase = 'field'; og.tp = now; og.cap = 7; } }
+    else if (el > 2800) { endOrigin(); return; }
+    if (og.fr % 8 === 0) setCaption();
+  }
+  function drawOrigin(now) {
+    var o = og.o, N = o.N, n = o.related, i, k, z = cam.z, mix = og.mix;
+    var fade = og.phase === 'field' ? 1 - ease((now - og.tp) / 2600) : 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    if (og.phase !== 'field') { ctx.fillStyle = 'rgba(6,8,15,' + (1 - mix * 0.85) + ')'; ctx.fillRect(0, 0, cw, ch); }
+    // frame the layout: everything is positioned from relations alone
+    var ccx = 0, ccy = 0, rad = 0;
+    for (i = 0; i < N; i++) { og.dx[i] += (o.x[i] - og.dx[i]) * 0.3; og.dy[i] += (o.y[i] - og.dy[i]) * 0.3; }
+    if (n) { for (i = 0; i < n; i++) { ccx += og.dx[i]; ccy += og.dy[i]; } ccx /= n; ccy /= n; }
+    for (i = 0; i < N; i++) { var ddx = og.dx[i] - ccx, ddy = og.dy[i] - ccy, dd = ddx * ddx + ddy * ddy; if (dd > rad) rad = dd; }
+    og.vr += (Math.sqrt(rad) + 1.5 - og.vr) * 0.06;
+    var topY = og.topY, botY = Math.max(topY + 120, og.botY), sc = Math.max(3, Math.min(cw - 40, botY - topY) / 2 / og.vr), midY = (topY + botY) / 2;
+    var px = og.px || (og.px = new Float64Array(N)), py = og.py || (og.py = new Float64Array(N));
+    for (i = 0; i < N; i++) {
+      var ax = cw / 2 + (og.dx[i] - ccx) * sc, ay = midY + (og.dy[i] - ccy) * sc;
+      if (mix > 0) { var tx = (o.wx(i) - cam.x) * z + cw / 2, ty = (o.wy(i) - cam.y) * z + ch / 2; ax += (tx - ax) * mix; ay += (ty - ay) * mix; }
+      px[i] = ax; py[i] = ay;
+    }
+    // relations
+    ctx.beginPath();
+    for (i = 0; i < n; i++) { var nb = o.nb[i]; for (k = 0; k < nb.length; k++) if (nb[k] > i) { ctx.moveTo(px[i], py[i]); ctx.lineTo(px[nb[k]], py[nb[k]]); } }
+    ctx.strokeStyle = 'rgba(205,214,255,' + (0.30 * fade) + ')'; ctx.lineWidth = 1; ctx.stroke();
+    if (n >= 3 && og.phase === 'grow') { // the rim: where the structure can still grow
+      ctx.beginPath(); var u = o.bstart; ctx.moveTo(px[u], py[u]);
+      for (k = 0; k < o.blen; k++) { u = o.bn[u]; ctx.lineTo(px[u], py[u]); }
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.3; ctx.stroke();
+    }
+    // elements: grey while indistinguishable, coloured once their relations single them out
+    if (n < N) {
+      ctx.fillStyle = 'rgba(168,176,204,0.55)'; ctx.beginPath();
+      for (i = n; i < N; i++) { if (i === o.marked) continue; ctx.rect(px[i] - 1.2, py[i] - 1.2, 2.4, 2.4); }
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fade;
+    var size = clamp(sc * 0.95, 7, 20); size += (Math.max(5.2, 8.6 * z) - size) * mix;
+    for (i = 0; i < n; i++) ctx.drawImage(sprites[o.single[i] && o.hue[i] >= 0 ? (o.hue[i] * HUES) | 0 : GREY], px[i] - size / 2, py[i] - size / 2, size, size);
+    if (o.marked >= 0 && n === 0) ctx.drawImage(sprites[(o.hue[0] >= 0 ? o.hue[0] * HUES : 0) | 0], px[0] - 9, py[0] - 9, 18, 18);
+    if (og.flash && now - og.flash < 1500) {
+      var ft = (now - og.flash) / 1500;
+      ctx.beginPath(); ctx.arc(px[0], py[0], 6 + 70 * ft, 0, 6.2832);
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.9 * (1 - ft)) + ')'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+  $('btnSkip').addEventListener('click', endOrigin);
+  $('kOrigin').addEventListener('change', function () { store('origin', this.checked ? '1' : '0'); });
 
   // ---- camera --------------------------------------------------------------
   function resize() {
@@ -171,6 +268,11 @@
   }
 
   function render(now) {
+    if (og && og.phase !== 'lay' && og.phase !== 'field') { drawOrigin(now); return; }
+    renderWorld(now);
+    if (og) drawOrigin(now);
+  }
+  function renderWorld(now) {
     var z = cam.z, tsec = reduceMotion ? 0 : now / 1000, L, i, h, a, b;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
@@ -516,6 +618,7 @@
       row.lastChild.textContent = fmt(st.n[L]);
       row.classList.toggle('is-empty', !st.n[L]);
       row.classList.toggle('is-lens', L === lensL);
+      row.classList.toggle('is-inside', L < lensL);
       for (var s = 0; s < 6; s++) {
         var c = ladderCells[L][s], v = st.stage[L][s];
         c.style.setProperty('--v', (v > 0 ? 0.12 + 0.88 * v : 0).toFixed(3));
@@ -523,6 +626,85 @@
         c.classList.toggle('is-crisis', s === 3 && v > 0.02);
       }
     }
+  }
+
+  // ---- the observer's frame: raw capacity is whatever the aperture resolves ------
+  function updateFrame() {
+    var L = Math.round(lens), arr = world.lv[L], n = arr.length, st = world.stats, html;
+    if (!n) html = 'No ' + LP[L] + ' exist yet, so ' + FSTOP[L] + ' resolves nothing.';
+    else if (L === 0) html = 'From <b>' + FSTOP[0] + '</b> a <b>Mote</b> is the raw capacity: one body, nothing resolved inside it.' + (st.n[1] ? ' ' + Math.round((1 - st.massTop[0] / n) * 100) + '% are already parts of something larger.' : '');
+    else {
+      var mass = 0, kids = 0;
+      for (var i = 0; i < n; i++) { mass += arr[i].mass; kids += arr[i].kids.length; }
+      html = 'From <b>' + FSTOP[L] + '</b> a <b>' + LN[L] + '</b> is the raw capacity. The ' + (L > 1 ? (kids / n).toFixed(1) + ' ' + LP[L - 1] + ' and ' : '') + Math.round(mass / n) + ' motes inside each are finished history' + (L < MAXL ? '; ' + LP[L + 1] + ' are what it may become.' : '.');
+    }
+    $('frame').innerHTML = html;
+  }
+
+  // ---- the stack: the whole chain, and how much of it this world enacts ----------
+  var stackEpoch = 0;
+  function stepState(step, ost, ana) {
+    if (step.origin !== undefined) {
+      var o = ost[step.origin];
+      if (o.assumed) return ['assumed', 'Assumed, not derived', o.text.replace(/^Assumed, not derived\. /, '')];
+      return o.done ? ['enacted', 'Enacted in this world', o.text] : ['waiting', 'Not yet reached', o.text];
+    }
+    if (step.analogue) { var a = ana[step.analogue]; return a && a.on ? ['analogue', 'Analogue observed', a.text] : ['waiting', 'Analogue not yet observed', '']; }
+    return ['outside', 'Outside this model', ''];
+  }
+  function stackCounts() {
+    var ost = (og ? og.o : world.origin).status(), ana = world.analogues(), out = [], tot = { live: 0, assumed: 0, waiting: 0, outside: 0 };
+    for (var e = 0; e < CHAIN.length; e++) {
+      var c = { live: 0, assumed: 0, waiting: 0, outside: 0, n: CHAIN[e].steps.length };
+      for (var i = 0; i < c.n; i++) { var k = stepState(CHAIN[e].steps[i], ost, ana)[0]; k = k === 'enacted' || k === 'analogue' ? 'live' : k; c[k]++; tot[k]++; }
+      out.push(c);
+    }
+    out.tot = tot; out.ost = ost; out.ana = ana;
+    return out;
+  }
+  function countLabel(c) {
+    var p = [];
+    if (c.live) p.push(c.live + ' live'); if (c.assumed) p.push(c.assumed + ' assumed'); if (c.waiting) p.push(c.waiting + ' waiting');
+    return p.length ? p.join(', ') : 'reference only';
+  }
+  (function () {
+    var html = '';
+    for (var e = 0; e < CHAIN.length; e++) html += '<button type="button" data-e="' + e + '"><i class="col"></i><span>' + (e + 1) + '</span></button>';
+    $('strip').innerHTML = html;
+    $('strip').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (b) openStack(+b.getAttribute('data-e')); });
+    $('btnStack').addEventListener('click', function () { openStack(stackEpoch); });
+    $('stackNav').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (b) { stackEpoch = +b.getAttribute('data-e'); renderStackNav(); renderStackSteps(); $('stackSteps').scrollIntoView({ block: 'nearest' }); } });
+  })();
+  function updateStrip() {
+    if (!CHAIN.length) return;
+    var c = stackCounts(), cols = $('strip').children;
+    for (var e = 0; e < cols.length; e++) {
+      cols[e].firstChild.style.setProperty('--v', (c[e].live / c[e].n).toFixed(3));
+      cols[e].firstChild.style.setProperty('--a', (c[e].assumed / c[e].n).toFixed(3));
+      cols[e].title = (e + 1) + '. ' + CHAIN[e].name + ': ' + c[e].n + ' steps, ' + countLabel(c[e]);
+      cols[e].setAttribute('aria-label', cols[e].title);
+    }
+    $('stripNote').textContent = c.tot.live + (c.tot.live === 1 ? ' step' : ' steps') + ' enacted or observed in this world, ' + c.tot.assumed + ' assumed, ' + c.tot.waiting + ' waiting, ' + c.tot.outside + ' outside the model.';
+  }
+  function renderStackNav() {
+    var c = stackCounts(), html = '';
+    for (var e = 0; e < CHAIN.length; e++) html += '<button type="button" data-e="' + e + '" aria-current="' + (e === stackEpoch) + '"><b>' + (e + 1) + '</b><span>' + CHAIN[e].name + '</span><small>' + countLabel(c[e]) + '</small></button>';
+    $('stackNav').innerHTML = html;
+  }
+  function renderStackSteps() {
+    var c = stackCounts(), steps = CHAIN[stackEpoch].steps, html = '';
+    for (var i = 0; i < steps.length; i++) {
+      var s = steps[i], st = stepState(s, c.ost, c.ana);
+      html += '<div class="step is-' + st[0] + '"><p class="step-line"><span>' + s.from + '</span><i aria-hidden="true">→</i><b>' + s.via + '</b><i aria-hidden="true">→</i><span>' + s.to + '</span></p>' +
+        '<p class="step-state"><em class="st-' + st[0] + '">' + st[1] + '</em>' + (st[2] ? '<span>' + st[2] + '</span>' : '') + '</p>' +
+        (s.open ? '<p class="step-open"><b>Open question.</b> ' + s.open.charAt(0).toUpperCase() + s.open.slice(1) + '.</p>' : '') + '</div>';
+    }
+    $('stackSteps').innerHTML = html;
+  }
+  function openStack(e) {
+    stackEpoch = clamp(e | 0, 0, CHAIN.length - 1);
+    renderStackNav(); renderStackSteps();
+    var d = $('stack'); if (!d.open) { if (d.showModal) d.showModal(); else d.setAttribute('open', ''); }
   }
 
   // ---- instruments: order spectrum -----------------------------------------------
@@ -738,7 +920,7 @@
     $('playGlyph').setAttribute('d', on ? 'M4 2.5h3v11H4zM9 2.5h3v11H9z' : 'M4 2.5 13 8l-9 5.5z');
   }
   $('btnPlay').addEventListener('click', function () { setRunning(!running); });
-  $('btnStep').addEventListener('click', function () { setRunning(false); world.step(); });
+  $('btnStep').addEventListener('click', function () { setRunning(false); if (!og) world.step(); });
   $('btnNew').addEventListener('click', function () { newWorld(); setRunning(true); });
   $('seed').addEventListener('keydown', function (e) { if (e.key === 'Enter') { newWorld(); setRunning(true); this.blur(); } });
 
@@ -786,7 +968,7 @@
     var t = e.target.tagName;
     if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || e.metaKey || e.ctrlKey || document.querySelector('dialog[open]')) return;
     if (e.key === ' ') { e.preventDefault(); setRunning(!running); }
-    else if (e.key === '.') { setRunning(false); world.step(); }
+    else if (e.key === '.') { setRunning(false); if (!og) world.step(); }
     else if (e.key === '[') setLens(Math.round(lensTarget) - 1);
     else if (e.key === ']') setLens(Math.round(lensTarget) + 1);
     else if (e.key === 'f' || e.key === 'F') fitView();
@@ -794,11 +976,12 @@
   });
 
   // ---- main loop ---------------------------------------------------------------------------
-  var lastUI = 0, lastHist = 0, lastSpec = 0;
+  var lastUI = 0, lastHist = 0, lastSpec = 0, lastStack = 0;
   function loop(now) {
     requestAnimationFrame(loop);
     frame++;
-    if (running) {
+    if (og) tickOrigin(now);
+    if (running && (!og || og.phase === 'field')) {
       var t0 = performance.now(), steps = 0;
       while (steps < speed && (steps === 0 || performance.now() - t0 < 13)) { world.step(); steps++; }
       tickCount += steps;
@@ -812,7 +995,8 @@
     renderMs += 0.06 * (performance.now() - r0 - renderMs);
     if (!slowRender && renderMs > 13) slowRender = true; else if (slowRender && renderMs < 4) slowRender = false;
     if (now - lastSpec > 450) { lastSpec = now; world.orderSpectrum(); updateSpectrum(); }
-    if (now - lastUI > 220) { lastUI = now; updateLadder(); updateReadouts(); }
+    if (now - lastUI > 220) { lastUI = now; updateLadder(); updateReadouts(); updateFrame(); }
+    if (now - lastStack > 1000) { lastStack = now; updateStrip(); if ($('stack').open) renderStackSteps(); }
     if (now - lastHist > 900 || histDirty) { lastHist = now; histDirty = false; drawTimeline(); }
   }
 
@@ -824,11 +1008,11 @@
     if (saved && saved.seed) $('seed').value = saved.seed;
     readTheme();
     syncDials();
+    if (store('origin') === '0') $('kOrigin').checked = false;
+    resize();
     newWorld();
-    // open on a living world rather than an empty field
-    for (var i = 0; i < 420; i++) world.step();
-    world.events.length = 0;
-    resize(); fitView();
+    fitView();
+    updateStrip();
     if (window.ResizeObserver) new ResizeObserver(function () { resize(); histDirty = true; }).observe($('stage'));
     window.addEventListener('resize', function () { resize(); histDirty = true; });
     if (window.matchMedia) {
@@ -839,7 +1023,7 @@
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { histDirty = true; });
     requestAnimationFrame(loop);
   }
-  window.__holon = { get world() { return world; }, cam: cam, setLens: setLens, fitView: fitView, setRunning: setRunning };
+  window.__holon = { get world() { return world; }, get origin() { return og; }, skipOrigin: endOrigin, openStack: openStack, cam: cam, setLens: setLens, fitView: fitView, setRunning: setRunning };
   var hot = window.claude && window.claude.hot;
   if (hot && hot.snapshot) hot.snapshot(function () { return { seed: world ? world.seed : null }; });
   if (hot && hot.ready) hot.ready(start); else start((hot && hot.data) || {});
